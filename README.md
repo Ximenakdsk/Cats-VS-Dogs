@@ -1,6 +1,6 @@
 # Kaggle Challenge: Dogs vs. Cats with CNN 🐾
 
-This project belongs to **Unit V** of the **Artificial Intelligence** course at the **Instituto Tecnológico de Toluca** (Activity 4.4: Neural Networks and Deep Learning). The primary goal is to solve a binary image classification problem using Deep Learning, comparing a custom-built architecture against a pre-trained model.
+The primary goal is to solve a binary image classification problem using Deep Learning, comparing a custom-built architecture against a pre-trained model.
 
 ## 🚀 Project Objective
 Achieve a classification accuracy higher than **95%** using **Transfer Learning**, evaluating its performance against a Convolutional Neural Network (CNN) built from scratch.
