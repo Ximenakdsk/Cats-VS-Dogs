@@ -31,4 +31,4 @@ Performance is analyzed using `matplotlib` to generate comparative charts of:
 - **Ethical Analysis:** Discussion on algorithmic bias based on the documentary *"Coded Bias"*.
 
 ---
-**Developed by:** Stephanie Ximena
+**Developed by:** Stephanie Ximena Pérez Hernández
