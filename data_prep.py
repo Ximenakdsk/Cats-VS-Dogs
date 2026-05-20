@@ -1,5 +1,84 @@
+import math
 import os
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+import numpy as np
+from PIL import Image
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, img_to_array, load_img
+from tensorflow.keras.utils import Sequence
+
+
+class DirectoryImageSequence(Sequence):
+    def __init__(self, filepaths, labels, datagen, target_size, batch_size, shuffle=True):
+        self.filepaths = filepaths
+        self.labels = np.asarray(labels, dtype="float32")
+        self.datagen = datagen
+        self.target_size = target_size
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.indexes = np.arange(len(self.filepaths))
+        self.rng = np.random.default_rng(42)
+        self.class_indices = {"cats": 0, "dogs": 1}
+        self.on_epoch_end()
+
+    def __len__(self):
+        return math.ceil(len(self.filepaths) / self.batch_size)
+
+    def __getitem__(self, index):
+        batch_indexes = self.indexes[index * self.batch_size : (index + 1) * self.batch_size]
+        batch_filepaths = [self.filepaths[i] for i in batch_indexes]
+        batch_labels = self.labels[batch_indexes]
+
+        images = []
+        valid_labels = []
+
+        for filepath, label in zip(batch_filepaths, batch_labels):
+            try:
+                image = load_img(filepath, target_size=self.target_size)
+                array = img_to_array(image)
+                if self.datagen is not None:
+                    array = self.datagen.random_transform(array)
+                    array = self.datagen.standardize(array)
+                images.append(array)
+                valid_labels.append(label)
+            except OSError as error:
+                print(f"[!] Saltando archivo inválido: {filepath} ({error})")
+
+        if not images:
+            raise ValueError("No se pudo cargar ninguna imagen válida en este batch.")
+
+        return np.asarray(images, dtype="float32"), np.asarray(valid_labels, dtype="float32")
+
+    def on_epoch_end(self):
+        if self.shuffle:
+            self.rng.shuffle(self.indexes)
+
+
+def _collect_valid_files(directory):
+    filepaths = []
+    labels = []
+    skipped_files = []
+    class_names = sorted(
+        entry.name for entry in os.scandir(directory) if entry.is_dir()
+    )
+
+    class_indices = {class_name: index for index, class_name in enumerate(class_names)}
+
+    for class_name in class_names:
+        class_dir = os.path.join(directory, class_name)
+        for filename in sorted(os.listdir(class_dir)):
+            filepath = os.path.join(class_dir, filename)
+            if not os.path.isfile(filepath):
+                continue
+
+            try:
+                with Image.open(filepath) as image:
+                    image.verify()
+                filepaths.append(filepath)
+                labels.append(class_indices[class_name])
+            except OSError as error:
+                skipped_files.append((filepath, str(error)))
+
+    return filepaths, labels, class_indices, skipped_files
 
 def get_data_generators(base_dir, target_size=(150, 150), batch_size=32):
     """
@@ -31,24 +110,37 @@ def get_data_generators(base_dir, target_size=(150, 150), batch_size=32):
     # para evaluar el modelo con datos "puros".
     validation_datagen = ImageDataGenerator(rescale=1./255)
 
-    # 3. Flujo de datos (Flow from directory)
-    # Toma las imágenes de las carpetas, las redimensiona al 'target_size' y 
-    # las agrupa en lotes (batches).
+    # 3. Cargamos los archivos válidos y omitimos las imágenes corruptas.
     print("Cargando imágenes de entrenamiento...")
-    train_generator = train_datagen.flow_from_directory(
-        train_dir,
-        target_size=target_size,    # Redimensiona todas las imágenes al tamaño indicado (ej. 150x150)
-        batch_size=batch_size,      # Número de imágenes por lote
-        class_mode='binary'         # Clasificación binaria (Perro o Gato -> 0 o 1)
+    train_filepaths, train_labels, class_indices, skipped_train = _collect_valid_files(train_dir)
+    if skipped_train:
+        print(f"[!] Se omitieron {len(skipped_train)} archivos inválidos en entrenamiento.")
+
+    train_generator = DirectoryImageSequence(
+        train_filepaths,
+        train_labels,
+        train_datagen,
+        target_size=target_size,
+        batch_size=batch_size,
+        shuffle=True,
     )
 
     print("Cargando imágenes de validación...")
-    validation_generator = validation_datagen.flow_from_directory(
-        validation_dir,
+    validation_filepaths, validation_labels, _, skipped_validation = _collect_valid_files(validation_dir)
+    if skipped_validation:
+        print(f"[!] Se omitieron {len(skipped_validation)} archivos inválidos en validación.")
+
+    validation_generator = DirectoryImageSequence(
+        validation_filepaths,
+        validation_labels,
+        validation_datagen,
         target_size=target_size,
         batch_size=batch_size,
-        class_mode='binary'
+        shuffle=False,
     )
+
+    train_generator.class_indices = class_indices
+    validation_generator.class_indices = class_indices
 
     return train_generator, validation_generator
 
